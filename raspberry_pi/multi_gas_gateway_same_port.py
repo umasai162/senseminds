@@ -623,6 +623,56 @@ def save_pending_data(data):
         return False
 
 
+def discover_backend_on_lan():
+    """Automatically locate the FastAPI backend laptop across mDNS and the local subnet."""
+    global CANDIDATE_BACKEND_URLS
+    print("\n[LAN Auto-Discovery] Probing for FastAPI backend across LAN...")
+
+    # 1. Try Windows hostnames via mDNS
+    for host in ["LAPTOP-9FJEJ6DQ.local", "LAPTOP-9FJEJ6DQ", "localhost"]:
+        try:
+            r = requests.get(f"http://{host}:8000/health", timeout=0.8)
+            if r.status_code == 200 and "MULTI GAS" in r.text:
+                found_url = f"http://{host}:8000/readings/"
+                print(f"[LAN Auto-Discovery] Found backend via hostname: {found_url}")
+                if found_url not in CANDIDATE_BACKEND_URLS:
+                    CANDIDATE_BACKEND_URLS.insert(0, found_url)
+                return found_url
+        except Exception:
+            pass
+
+    # 2. Auto-scan local subnet on port 8000
+    try:
+        import concurrent.futures
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        my_ip = s.getsockname()[0]
+        s.close()
+        subnet = '.'.join(my_ip.split('.')[:3])
+
+        def probe_ip(i):
+            target = f"http://{subnet}.{i}:8000"
+            try:
+                r = requests.get(f"{target}/health", timeout=0.5)
+                if r.status_code == 200 and "MULTI GAS" in r.text:
+                    return f"{target}/readings/"
+            except Exception:
+                pass
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as ex:
+            for res in ex.map(probe_ip, range(1, 255)):
+                if res:
+                    print(f"[LAN Auto-Discovery] Found backend on subnet: {res}")
+                    if res not in CANDIDATE_BACKEND_URLS:
+                        CANDIDATE_BACKEND_URLS.insert(0, res)
+                    return res
+    except Exception as exc:
+        print(f"[LAN Auto-Discovery Error] {exc}")
+
+    return None
+
+
 def send_to_backend(data):
     global backend_online, BACKEND_URL
 
@@ -641,13 +691,25 @@ def send_to_backend(data):
 
     for target_url in urls_to_try:
         try:
-            response = requests.post(target_url, json=payload, timeout=2.5)
+            response = requests.post(target_url, json=payload, timeout=2.0)
             if 200 <= response.status_code < 300:
                 backend_online = True
                 BACKEND_URL = target_url
                 return True
         except Exception:
             continue
+
+    # If all known URLs failed, run LAN auto-discovery once to locate the new laptop IP
+    discovered_url = discover_backend_on_lan()
+    if discovered_url:
+        try:
+            response = requests.post(discovered_url, json=payload, timeout=2.5)
+            if 200 <= response.status_code < 300:
+                backend_online = True
+                BACKEND_URL = discovered_url
+                return True
+        except Exception:
+            pass
 
     backend_online = False
     return False
