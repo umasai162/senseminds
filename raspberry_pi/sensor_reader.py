@@ -34,9 +34,9 @@ import requests
 configured_url = os.getenv("BACKEND_URL")
 CANDIDATE_BACKEND_URLS = [
     configured_url,
-    "http://192.168.55.108:8000/readings/",
-    "http://192.168.1.37:8000/readings/",
     "http://192.168.1.6:8000/readings/",
+    "http://192.168.1.37:8000/readings/",
+    "http://192.168.55.108:8000/readings/",
     "http://127.0.0.1:8000/readings/",
     "http://localhost:8000/readings/"
 ]

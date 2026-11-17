@@ -64,12 +64,12 @@ APP_NAME = "MULTI GAS ANALYZER IoT GATEWAY"
 READ_INTERVAL = int(os.getenv("READ_INTERVAL", "5"))
 
 # Auto-configured LAN backend with candidate fallbacks
-DEFAULT_BACKEND = os.getenv("BACKEND_URL", "http://192.168.55.108:8000/readings/")
+DEFAULT_BACKEND = os.getenv("BACKEND_URL", "http://192.168.1.6:8000/readings/")
 CANDIDATE_BACKEND_URLS = [
     DEFAULT_BACKEND,
-    "http://192.168.55.108:8000/readings/",
-    "http://192.168.1.37:8000/readings/",
     "http://192.168.1.6:8000/readings/",
+    "http://192.168.1.37:8000/readings/",
+    "http://192.168.55.108:8000/readings/",
     "http://127.0.0.1:8000/readings/",
     "http://localhost:8000/readings/",
 ]
