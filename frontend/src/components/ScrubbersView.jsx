@@ -188,10 +188,10 @@ export default function ScrubbersView({ scrubbers, onSelectScrubber }) {
                       {s.location || 'H2S Gas Sensor'}
                     </td>
                     <td style={{ padding: '14px 18px', fontWeight: 800, color: colorStyle.text, fontFamily: 'var(--font-mono)', fontSize: '15px' }}>
-                      {s.currentValue !== undefined ? s.currentValue.toFixed(2) : '0.00'}
+                      {(typeof s.currentValue === 'number' && !isNaN(s.currentValue)) ? s.currentValue.toFixed(2) : '---'}
                     </td>
                     <td style={{ padding: '14px 18px', color: 'var(--text-main)', fontFamily: 'var(--font-mono)' }}>
-                      {s.avgValue !== undefined ? s.avgValue.toFixed(2) : '-'}
+                      {(typeof s.avgValue === 'number' && !isNaN(s.avgValue)) ? s.avgValue.toFixed(2) : '---'}
                     </td>
                     <td style={{ padding: '14px 18px' }}>
                       <span style={{

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
 import ScrubbersView from './components/ScrubbersView';
@@ -14,6 +14,7 @@ import AICopilotChat from './components/AICopilotChat';
 import { Activity, Menu } from 'lucide-react';
 
 import { INITIAL_SENSORS, INITIAL_ALERTS } from './data/scrubberData';
+import { getApiBaseUrl, fetchHealth } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -23,6 +24,12 @@ export default function App() {
   const [sensors, setSensors] = useState(INITIAL_SENSORS);
   const [alerts, setAlerts] = useState(INITIAL_ALERTS);
   const [toast, setToast] = useState(null);
+
+  // LAN Gateway connectivity state
+  const [gatewayConnected, setGatewayConnected] = useState(null); // null (checking), true, false
+  const [gatewayError, setGatewayError] = useState(null);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Landing Page & Login State Machine: 'landing' | 'login' | 'dashboard'
   const [viewState, setViewState] = useState('landing');
@@ -55,52 +62,100 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  // Fetch live telemetry from FastAPI Backend
-  useEffect(() => {
-    if (viewState !== 'dashboard') return;
+  // Fetch live telemetry from FastAPI Backend over LAN
+  const fetchTelemetry = useCallback(async () => {
+    setIsSyncing(true);
+    const apiUrl = getApiBaseUrl();
 
-    const fetchLatestReading = async () => {
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-        const response = await fetch(`${apiUrl}/readings/?limit=10`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.length > 0) {
-            // Get the most recent reading for each sensor
-            const latestBySensor = {};
-            data.forEach(reading => {
-              if (!latestBySensor[reading.sensor_id]) {
-                latestBySensor[reading.sensor_id] = reading;
-              }
-            });
+    try {
+      // 1. Check health
+      await fetchHealth();
+      setGatewayConnected(true);
+      setGatewayError(null);
 
-            setSensors(prev => prev.map(s => {
-              const latest = latestBySensor[s.sensor_id];
+      // 2. Fetch latest telemetry
+      const response = await fetch(`${apiUrl}/readings/?limit=100`);
+      if (response.ok) {
+        const data = await response.json();
+        setLastSyncTime(new Date().toLocaleTimeString());
+
+        if (Array.isArray(data) && data.length > 0) {
+          // Map latest reading per sensor_id (data is descending order)
+          const latestBySensor = {};
+          data.forEach(reading => {
+            const sid = String(reading.sensor_id);
+            if (!latestBySensor[sid]) {
+              latestBySensor[sid] = reading;
+            }
+          });
+
+          setSensors(prev => {
+            const updated = prev.map(s => {
+              const latest = latestBySensor[String(s.sensor_id)];
               if (latest) {
                 const isOffline = latest.status?.toLowerCase() === 'offline';
                 return {
                   ...s,
-                  currentValue: latest.value !== null ? latest.value : s.currentValue,
+                  device_name: latest.device_name || s.device_name,
+                  gas_type: latest.gas_type || s.gas_type,
+                  unit: latest.unit || s.unit,
+                  currentValue: latest.value,
                   status: latest.status,
                   isOffline: isOffline,
                   lastUpdated: new Date(latest.timestamp).toLocaleTimeString()
                 };
               }
               return s;
-            }));
-          }
+            });
+
+            // Dynamically register any sensors discovered in telemetry not present in initial list
+            const existingIds = new Set(prev.map(s => String(s.sensor_id)));
+            const newlyDiscovered = [];
+            Object.entries(latestBySensor).forEach(([sid, r]) => {
+              if (!existingIds.has(sid)) {
+                newlyDiscovered.push({
+                  sensor_id: r.sensor_id,
+                  device_name: r.device_name || `Sensor ${r.sensor_id}`,
+                  gas_type: r.gas_type || 'Gas',
+                  currentValue: r.value,
+                  unit: r.unit || 'ppm',
+                  status: r.status,
+                  isOffline: r.status?.toLowerCase() === 'offline',
+                  lastUpdated: new Date(r.timestamp).toLocaleTimeString(),
+                  location: 'IoT Gateway Dynamic Channel',
+                  aiObservations: 'Active sensor telemetry received via LAN gateway.'
+                });
+              }
+            });
+
+            return [...updated, ...newlyDiscovered];
+          });
         }
-      } catch (err) {
-        console.error("Failed to fetch live telemetry:", err);
       }
-    };
-    
-    // Poll every 5 seconds
-    const interval = setInterval(fetchLatestReading, 5000);
+    } catch (err) {
+      console.warn("Failed to fetch live telemetry:", err);
+      setGatewayConnected(false);
+      setGatewayError(`LAN Gateway Unreachable at ${apiUrl}. Verify FastAPI backend is running.`);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (viewState !== 'dashboard') return;
+
     // Initial fetch
-    fetchLatestReading();
+    fetchTelemetry();
+
+    // Poll every 5 seconds (5-10 second requirement)
+    const interval = setInterval(fetchTelemetry, 5000);
     return () => clearInterval(interval);
-  }, [viewState]);
+  }, [viewState, fetchTelemetry]);
+
+  const handleRefreshTelemetry = () => {
+    fetchTelemetry();
+    showToast('🔄 Synchronizing live sensor telemetry...', 'info');
+  };
 
 
   const toggleTheme = () => {
@@ -143,11 +198,6 @@ export default function App() {
       }
       return alt;
     }));
-  };
-
-  // Refresh / Sync Live Telemetry manually
-  const handleRefreshTelemetry = () => {
-    showToast('🔄 Syncing live telemetry from backend...', 'info');
   };
 
   const activeAlertsCount = alerts.filter(a => a.status === 'Open').length;
@@ -264,6 +314,10 @@ export default function App() {
               sensors={sensors}
               onSelectSensor={handleSelectSensor}
               onRefresh={handleRefreshTelemetry}
+              gatewayConnected={gatewayConnected}
+              gatewayError={gatewayError}
+              lastSyncTime={lastSyncTime}
+              isSyncing={isSyncing}
             />
           )}
 

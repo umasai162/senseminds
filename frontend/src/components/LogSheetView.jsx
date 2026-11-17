@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
+import { getApiBaseUrl } from '../api';
 
 export default function LogSheetView() {
   const [logSheet, setLogSheet] = useState('H2S');
@@ -44,7 +45,7 @@ export default function LogSheetView() {
 
   const fetchReadings = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const apiUrl = getApiBaseUrl();
       const response = await fetch(`${apiUrl}/readings/?limit=500`); // Fetch enough for local filtering
       if (response.ok) {
         const data = await response.json();
@@ -65,7 +66,13 @@ export default function LogSheetView() {
 
   // Filter logic
   const filteredReadings = useMemo(() => {
-    if (!applyFilters) return readings;
+    // Filter by selected log sheet gas type (H2S or CO)
+    let list = readings;
+    if (logSheet) {
+      list = list.filter(r => (r.gas_type || '').toUpperCase() === logSheet.toUpperCase());
+    }
+
+    if (!applyFilters) return list;
     
     const parseTime = (timeString) => {
       const [time, period] = timeString.split(' ');
@@ -79,11 +86,11 @@ export default function LogSheetView() {
     const fromTime = new Date(`${fromDate}T${timeStr}`).getTime();
     const toTime = new Date(`${toDate}T23:59:59`).getTime();
     
-    return readings.filter(r => {
+    return list.filter(r => {
       const rTime = new Date(r.timestamp).getTime();
       return rTime >= fromTime && rTime <= toTime;
     });
-  }, [readings, applyFilters, fromDate, startTime, toDate]);
+  }, [readings, logSheet, applyFilters, fromDate, startTime, toDate]);
 
   // Pagination logic
   const totalPages = Math.ceil(filteredReadings.length / itemsPerPage) || 1;

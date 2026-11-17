@@ -1,18 +1,30 @@
 import React, { useState, useMemo } from 'react';
 import ScrubberCard from './ScrubberCard';
-import { Search, Filter, RefreshCw, CheckCircle2, AlertTriangle, AlertOctagon, Layers } from 'lucide-react';
+import { Search, Filter, RefreshCw, CheckCircle2, AlertTriangle, AlertOctagon, Layers, Wifi, WifiOff, AlertCircle } from 'lucide-react';
 import { evaluateStatus } from '../data/scrubberData';
+import { getApiBaseUrl } from '../api';
 
-export default function DashboardView({ sensors, onSelectSensor, onRefresh }) {
+export default function DashboardView({
+  sensors,
+  onSelectSensor,
+  onRefresh,
+  gatewayConnected,
+  gatewayError,
+  lastSyncTime,
+  isSyncing: parentSyncing
+}) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [localSyncing, setLocalSyncing] = useState(false);
+
+  const isSyncing = parentSyncing || localSyncing;
+  const backendBaseUrl = getApiBaseUrl();
 
   // Handle refresh click with spinning feedback
   const handleSyncClick = () => {
-    setIsSyncing(true);
+    setLocalSyncing(true);
     if (onRefresh) onRefresh();
-    setTimeout(() => setIsSyncing(false), 600);
+    setTimeout(() => setLocalSyncing(false), 800);
   };
 
   // Calculate status counts
@@ -86,11 +98,44 @@ export default function DashboardView({ sensors, onSelectSensor, onRefresh }) {
             </span>
           </h1>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>
-            Continuous H2S Gas monitoring for industrial systems
+            MULTI GAS ANALYZER IoT GATEWAY • Uniphos 500DT RS485 CEMS Interface
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Right Status Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          {/* Gateway LAN Indicator Badge */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 12px',
+            borderRadius: '10px',
+            background: gatewayConnected === true ? 'rgba(46, 125, 50, 0.12)' : gatewayConnected === false ? 'rgba(220, 38, 38, 0.12)' : 'rgba(217, 119, 6, 0.12)',
+            border: `1px solid ${gatewayConnected === true ? 'rgba(46, 125, 50, 0.35)' : gatewayConnected === false ? 'rgba(220, 38, 38, 0.35)' : 'rgba(217, 119, 6, 0.35)'}`,
+            fontSize: '12px',
+            fontWeight: 600,
+            color: gatewayConnected === true ? '#2E7D32' : gatewayConnected === false ? '#DC2626' : '#D97706'
+          }}>
+            {gatewayConnected === true ? (
+              <>
+                <Wifi size={14} />
+                <span>LAN Gateway Online ({backendBaseUrl})</span>
+              </>
+            ) : gatewayConnected === false ? (
+              <>
+                <WifiOff size={14} />
+                <span>LAN Gateway Offline</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw size={14} className="spin-fast" />
+                <span>Connecting to Gateway...</span>
+              </>
+            )}
+          </div>
+
+          {/* Sync Button */}
           <button
             onClick={handleSyncClick}
             className="btn-interactive"
@@ -110,10 +155,47 @@ export default function DashboardView({ sensors, onSelectSensor, onRefresh }) {
             }}
           >
             <RefreshCw size={15} className={isSyncing ? 'spin-fast' : ''} />
-            <span>{isSyncing ? 'Syncing Telemetry...' : 'Sync Live Telemetry'}</span>
+            <span>{isSyncing ? 'Syncing...' : 'Sync Telemetry'}</span>
           </button>
         </div>
       </div>
+
+      {/* Gateway Error Notification Banner */}
+      {gatewayError && (
+        <div style={{
+          padding: '12px 18px',
+          borderRadius: '12px',
+          background: 'rgba(239, 68, 68, 0.12)',
+          border: '1px solid rgba(239, 68, 68, 0.35)',
+          color: '#ef4444',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          fontSize: '13px',
+          fontWeight: 600
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={18} />
+            <span>{gatewayError}</span>
+          </div>
+          <button
+            onClick={handleSyncClick}
+            style={{
+              background: 'rgba(239, 68, 68, 0.2)',
+              border: '1px solid #ef4444',
+              color: '#ef4444',
+              padding: '4px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 700
+            }}
+          >
+            Retry Connection
+          </button>
+        </div>
+      )}
 
       {/* Summary Status Strip */}
       <div style={{

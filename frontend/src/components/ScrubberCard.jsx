@@ -151,14 +151,16 @@ export default function ScrubberCard({ scrubber, index = 0, onClick }) {
             marginTop: '2px',
             transition: 'color 0.3s ease'
           }}>
-            {scrubber.currentValue !== undefined ? scrubber.currentValue.toFixed(2) : '0.00'}
+            {(typeof scrubber.currentValue === 'number' && !isNaN(scrubber.currentValue))
+              ? scrubber.currentValue.toFixed(2)
+              : '---'}
           </div>
         </div>
 
         <div style={{ textAlign: 'right' }}>
           <span style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>Safe Limit</span>
           <div style={{ fontSize: '12px', color: 'var(--text-main)', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
-            {scrubber.gas_type === 'pH' ? '10.0 - 12.0 pH' : `< ${ALERTS_RULES.WARNING_MAX_PPM} ${scrubber.unit}`}
+            {scrubber.gas_type === 'pH' ? '10.0 - 12.0 pH' : `< ${ALERTS_RULES.WARNING_MAX_PPM} ${scrubber.unit || 'ppm'}`}
           </div>
         </div>
       </div>
@@ -174,15 +176,17 @@ export default function ScrubberCard({ scrubber, index = 0, onClick }) {
         borderTop: '1px solid var(--border-subtle)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          {scrubber.isOffline ? (
+          {scrubber.isOffline || scrubber.status?.toUpperCase() === 'OFFLINE' || scrubber.currentValue === null ? (
             <>
               <AlertTriangle size={12} color="var(--accent-danger)" />
-              <span style={{ color: 'var(--accent-danger)', fontWeight: 700 }}>Sensor Offline</span>
+              <span style={{ color: 'var(--accent-danger)', fontWeight: 700 }}>
+                {scrubber.status?.toUpperCase() === 'OFFLINE' ? 'Sensor Offline' : 'Awaiting Telemetry'}
+              </span>
             </>
           ) : (
             <>
               <Clock size={12} color="var(--text-dim)" />
-              <span>Updated {scrubber.lastUpdated || 'Just now'}</span>
+              <span>{scrubber.lastUpdated ? `Updated ${scrubber.lastUpdated}` : 'Live Telemetry'}</span>
             </>
           )}
         </div>

@@ -26,20 +26,36 @@ import {
   Tooltip,
   ReferenceLine
 } from 'recharts';
-import { evaluateStatus, getStatusColor, generateTrendData, RECOMMENDED_ACTIONS, ALERTS_RULES } from '../data/scrubberData';
+import { evaluateStatus, getStatusColor, RECOMMENDED_ACTIONS, ALERTS_RULES } from '../data/scrubberData';
+import { getApiBaseUrl, fetchReadingsHistory } from '../api';
 
 export default function ScrubberDetailView({ scrubber, alerts, onBack, onResolveAlert }) {
-  const sensor = scrubber; // Aliased for easier refactoring
+  const sensor = scrubber;
   const [timeFilter, setTimeFilter] = useState('Daily');
   const [xaiExplanation, setXaiExplanation] = useState('');
   const [isLoadingXAI, setIsLoadingXAI] = useState(false);
   const [mlForecast, setMlForecast] = useState(null);
+  const [historicalReadings, setHistoricalReadings] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   useEffect(() => {
     if (sensor) {
       setIsLoadingXAI(true);
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const apiUrl = getApiBaseUrl();
       const sId = parseInt(sensor.sensor_id, 10);
+
+      // Fetch real historical telemetry for this sensor
+      if (!isNaN(sId)) {
+        setIsLoadingHistory(true);
+        fetchReadingsHistory({ sensorId: sId, limit: 50 })
+          .then((data) => {
+            if (Array.isArray(data)) {
+              setHistoricalReadings(data);
+            }
+          })
+          .catch((err) => console.warn('Could not fetch historical readings:', err))
+          .finally(() => setIsLoadingHistory(false));
+      }
 
       const fetchMLData = async () => {
         try {
@@ -74,10 +90,29 @@ export default function ScrubberDetailView({ scrubber, alerts, onBack, onResolve
     return alerts.filter(a => a.sensorId === sensor.sensor_id);
   }, [alerts, sensor.sensor_id]);
 
-  // Generate chart data based on timeFilter
+  // Generate real chart data from actual backend history
   const trendData = useMemo(() => {
-    return generateTrendData(sensor, timeFilter);
-  }, [sensor, timeFilter]);
+    if (historicalReadings && historicalReadings.length > 0) {
+      return [...historicalReadings].reverse().map(r => ({
+        time: new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        value: r.value !== null ? r.value : 0,
+        warningThreshold: ALERTS_RULES.WARNING_MAX_PPM,
+        criticalThreshold: ALERTS_RULES.CRITICAL_MAX_PPM,
+      }));
+    }
+    // If only current reading is known and valid, plot single real point
+    if (typeof sensor.currentValue === 'number') {
+      return [{
+        time: sensor.lastUpdated || 'Current',
+        value: sensor.currentValue,
+        warningThreshold: ALERTS_RULES.WARNING_MAX_PPM,
+        criticalThreshold: ALERTS_RULES.CRITICAL_MAX_PPM,
+      }];
+    }
+    return [];
+  }, [historicalReadings, sensor]);
+
+  const formatMetric = (val) => (typeof val === 'number' && !isNaN(val) ? val.toFixed(2) : '---');
 
   // Status Icon getter
   const getStatusIcon = () => {
@@ -238,10 +273,10 @@ export default function ScrubberDetailView({ scrubber, alerts, onBack, onResolve
             fontFamily: 'var(--font-mono)',
             marginTop: '4px'
           }}>
-            {sensor.currentValue !== undefined ? sensor.currentValue.toFixed(2) : '0.00'}
+            {formatMetric(sensor.currentValue)}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
-            Safe Limit: &lt; {ALERTS_RULES.WARNING_MAX_PPM} {sensor.unit}
+            Safe Limit: &lt; {ALERTS_RULES.WARNING_MAX_PPM} {sensor.unit || 'ppm'}
           </div>
         </div>
 
@@ -263,7 +298,7 @@ export default function ScrubberDetailView({ scrubber, alerts, onBack, onResolve
             fontFamily: 'var(--font-mono)',
             marginTop: '4px'
           }}>
-            {sensor.avgValue !== undefined ? sensor.avgValue.toFixed(2) : '0.00'}
+            {formatMetric(sensor.avgValue)}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
             Historical 24-hour mean
@@ -289,7 +324,7 @@ export default function ScrubberDetailView({ scrubber, alerts, onBack, onResolve
             fontFamily: 'var(--font-mono)',
             marginTop: '4px'
           }}>
-            {sensor.minValue !== undefined ? sensor.minValue.toFixed(2) : '0.00'}
+            {formatMetric(sensor.minValue)}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
             Lowest recorded in period
@@ -315,7 +350,7 @@ export default function ScrubberDetailView({ scrubber, alerts, onBack, onResolve
             fontFamily: 'var(--font-mono)',
             marginTop: '4px'
           }}>
-            {sensor.maxValue !== undefined ? sensor.maxValue.toFixed(2) : '0.00'}
+            {formatMetric(sensor.maxValue)}
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
             Peak recorded in period
@@ -402,46 +437,63 @@ export default function ScrubberDetailView({ scrubber, alerts, onBack, onResolve
         </div>
 
         {/* Recharts Component */}
-        <div style={{ width: '100%', height: '330px' }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trendData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-              <XAxis dataKey="time" stroke="var(--text-dim)" tick={{ fontSize: 11 }} />
-              <YAxis domain={[0, 30]} stroke="var(--text-dim)" tick={{ fontSize: 11 }} />
-              <Tooltip content={<CustomTooltip />} />
-              
-              {/* 1. Warning Threshold Line (PPM = 10.0) */}
-              <ReferenceLine
-                y={ALERTS_RULES.WARNING_MAX_PPM}
-                stroke="#D97706"
-                strokeDasharray="6 4"
-                strokeWidth={1.5}
-                label={{ value: 'Warning (≥ 10 PPM)', fill: '#D97706', fontSize: 11, fontWeight: 700, position: 'insideRight', dy: -10 }}
-              />
+        {trendData.length > 0 ? (
+          <div style={{ width: '100%', height: '330px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendData} margin={{ top: 20, right: 30, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                <XAxis dataKey="time" stroke="var(--text-dim)" tick={{ fontSize: 11 }} />
+                <YAxis domain={[0, 30]} stroke="var(--text-dim)" tick={{ fontSize: 11 }} />
+                <Tooltip content={<CustomTooltip />} />
+                
+                {/* 1. Warning Threshold Line (PPM = 10.0) */}
+                <ReferenceLine
+                  y={ALERTS_RULES.WARNING_MAX_PPM}
+                  stroke="#D97706"
+                  strokeDasharray="6 4"
+                  strokeWidth={1.5}
+                  label={{ value: 'Warning (≥ 10 PPM)', fill: '#D97706', fontSize: 11, fontWeight: 700, position: 'insideRight', dy: -10 }}
+                />
 
-              {/* 2. Critical Threshold Line (PPM = 20.0) */}
-              <ReferenceLine
-                y={ALERTS_RULES.CRITICAL_MAX_PPM}
-                stroke="#DC2626"
-                strokeDasharray="6 4"
-                strokeWidth={1.5}
-                label={{ value: 'Critical (≥ 20 PPM)', fill: '#DC2626', fontSize: 11, fontWeight: 700, position: 'insideBottomRight', dy: -10 }}
-              />
+                {/* 2. Critical Threshold Line (PPM = 20.0) */}
+                <ReferenceLine
+                  y={ALERTS_RULES.CRITICAL_MAX_PPM}
+                  stroke="#DC2626"
+                  strokeDasharray="6 4"
+                  strokeWidth={1.5}
+                  label={{ value: 'Critical (≥ 20 PPM)', fill: '#DC2626', fontSize: 11, fontWeight: 700, position: 'insideBottomRight', dy: -10 }}
+                />
 
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="var(--primary)"
-                strokeWidth={3}
-                isAnimationActive={true}
-                animationDuration={1000}
-                animationEasing="ease-in-out"
-                dot={{ r: 4, fill: 'var(--primary)', stroke: '#ffffff', strokeWidth: 1.5 }}
-                activeDot={{ r: 7, fill: 'var(--accent-success)', stroke: '#ffffff', strokeWidth: 2 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="var(--primary)"
+                  strokeWidth={3}
+                  isAnimationActive={true}
+                  animationDuration={1000}
+                  animationEasing="ease-in-out"
+                  dot={{ r: 4, fill: 'var(--primary)', stroke: '#ffffff', strokeWidth: 1.5 }}
+                  activeDot={{ r: 7, fill: 'var(--accent-success)', stroke: '#ffffff', strokeWidth: 2 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div style={{
+            height: '240px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--text-muted)',
+            border: '1px dashed var(--border-subtle)',
+            borderRadius: '12px'
+          }}>
+            <Activity size={32} color="var(--primary)" style={{ marginBottom: '10px', opacity: 0.7 }} />
+            <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-main)' }}>Awaiting Live Sensor Telemetry</span>
+            <span style={{ fontSize: '12px', marginTop: '4px' }}>Historical readings will appear here once transmitted by the IoT Gateway.</span>
+          </div>
+        )}
       </div>
 
       {/* Grid Row: AI Observations & Recommended Actions */}

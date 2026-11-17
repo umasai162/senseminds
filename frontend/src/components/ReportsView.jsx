@@ -31,12 +31,13 @@ export default function ReportsView({ scrubbers, alerts }) {
     const rows = filteredScrubbers.map(s => {
       const status = evaluateStatus(s.currentValue, s.gas_type, s.status);
       const statusLabel = status === 'Healthy' ? 'Normal' : status === 'Warning' ? 'Moderate' : 'Critical';
+      const fmt = (v) => (typeof v === 'number' && !isNaN(v) ? v.toFixed(2) : '-');
       return [
         s.device_name,
-        s.currentValue !== undefined ? s.currentValue.toFixed(2) : '0.00',
-        s.avgValue !== undefined ? s.avgValue.toFixed(2) : '-',
-        s.minValue !== undefined ? s.minValue.toFixed(2) : '-',
-        s.maxValue !== undefined ? s.maxValue.toFixed(2) : '-',
+        fmt(s.currentValue),
+        fmt(s.avgValue),
+        fmt(s.minValue),
+        fmt(s.maxValue),
         statusLabel
       ];
     });

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, Sparkles, AlertTriangle, ArrowRight, CornerDownLeft, RefreshCw, Database } from 'lucide-react';
+import { getApiBaseUrl } from '../api';
 
 export default function AICopilotChat() {
   const [messages, setMessages] = useState([
@@ -28,7 +29,7 @@ export default function AICopilotChat() {
     setIsThinking(true);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const apiUrl = getApiBaseUrl();
       const response = await fetch(`${apiUrl}/copilot/query`, {
         method: 'POST',
         headers: {
