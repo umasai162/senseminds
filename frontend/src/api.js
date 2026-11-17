@@ -43,8 +43,10 @@ export const fetchHealth = async () => {
     `http://${host}:8000`,
     'http://localhost:8000',
     'http://127.0.0.1:8000',
-    'http://192.168.1.37:8000',
-    'http://192.168.1.6:8000'
+    'http://192.168.1.8:8000',
+    'http://192.168.55.105:8000',
+    'http://192.168.1.6:8000',
+    'http://192.168.1.37:8000'
   ];
 
   // De-duplicate candidates preserving order
